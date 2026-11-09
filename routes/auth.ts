@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { scryptSync, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcrypt';
+import cors from '@fastify/cors';
 import { generateTokens } from '../utils/auth';
 
 async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
@@ -53,6 +54,12 @@ const loginRateLimit = {
 };
 
 export default async function (fastify: FastifyInstance): Promise<void> {
+
+	await fastify.register(cors, {
+		origin: process.env.CLIENT_URL || process.env.DASHBOARD_URL || 'http://localhost:3000',
+		credentials: false,
+		methods: ["GET", "POST", "PATCH", "DELETE"]
+	});
 
 	fastify.post<{ Body: LoginBody }>('/login', loginRateLimit, async (request, reply) => {
 
