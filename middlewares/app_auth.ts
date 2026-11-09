@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcrypt';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -7,11 +8,21 @@ declare module 'fastify' {
     }
 }
 
-export async function authenticateApp(request: FastifyRequest,reply: FastifyReply) {
+async function verifyApiKey(providedApiKey: string, storedApiKey: string): Promise<boolean> {
+    if (storedApiKey.length === 64) {
+        const hashedProvided = createHash('sha256').update(providedApiKey).digest('hex');
+        const a = Buffer.from(hashedProvided, 'hex');
+        const b = Buffer.from(storedApiKey, 'hex');
+        return a.length === b.length && timingSafeEqual(a, b);
+    }
+    return bcrypt.compare(providedApiKey, storedApiKey);
+}
+
+export async function authenticateApp(request: FastifyRequest, reply: FastifyReply) {
     const apiKey = request.headers['x-api-key'];
     const appId = request.headers['x-app-id'];
 
-    if (typeof apiKey !== 'string' ||typeof appId !== 'string' ||!apiKey.trim() ||!appId.trim()) {
+    if (typeof apiKey !== 'string' || typeof appId !== 'string' || !apiKey.trim() || !appId.trim()) {
         return reply.code(401).send({
             success: false,
             error: 'Missing API credentials'
@@ -19,23 +30,23 @@ export async function authenticateApp(request: FastifyRequest,reply: FastifyRepl
     }
 
     try {
-        const result = await request.server.pg.query<{id: string;api_key: string;}>(
-            `SELECT id, api_key
+        const result = await request.server.pg.query<{ id: string; appid: string; api_key: string; }>(
+            `SELECT id, appid, api_key
              FROM apps
-             WHERE id = $1`,
+             WHERE appid = $1`,
             [appId.trim()]
         );
 
-        if (result.rowCount === 0) {
+        const app = result.rows[0];
+
+        if (!app) {
             return reply.code(401).send({
                 success: false,
                 error: 'Invalid API credentials'
             });
         }
 
-        const app : any = result.rows[0];
-
-        const validApiKey = await bcrypt.compare(apiKey,app.api_key);
+        const validApiKey = await verifyApiKey(apiKey, app.api_key);
 
         if (!validApiKey) {
             return reply.code(401).send({
@@ -44,7 +55,7 @@ export async function authenticateApp(request: FastifyRequest,reply: FastifyRepl
             });
         }
 
-        request.appId = app.id;
+        request.appId = app.appid;
 
     } catch (error) {
         request.log.error(error);

@@ -15,7 +15,7 @@ type Metrics = {
 
 export default class JARVIS {
     private api_key: string;
-    private app_name: string;
+    private app_id: string;
     private base_url: string;
 
     private events: Event[] = [];
@@ -23,11 +23,11 @@ export default class JARVIS {
 
     constructor(
         api_key: string,
-        app_name: string,
+        app_id: string,
         base_url = "https://api.nitshack9.com"
     ) {
         this.api_key = api_key;
-        this.app_name = app_name;
+        this.app_id = app_id;
         this.base_url = base_url.replace(/\/$/, "");
     }
 
@@ -37,7 +37,7 @@ export default class JARVIS {
             headers: {
                 "Content-Type": "application/json",
                 "x-api-key": this.api_key,
-                "x-app-id": this.app_name
+                "x-app-id": this.app_id
             },
             body: JSON.stringify(body)
         });
@@ -88,11 +88,17 @@ export default class JARVIS {
         // Send metrics
         if (metrics.length) {
             try {
+                const data: Record<string, Record<string, number>> = {};
+                for (const m of metrics) {
+                    data[m.service] = {
+                        ...(data[m.service] ?? {}),
+                        ...m.metrics
+                    };
+                }
+
                 results.metrics = await this.request("/api/metrics", {
                     timestamp: new Date().toISOString(),
-                    data: Object.fromEntries(
-                        metrics.map(m => [m.service, m.metrics])
-                    )
+                    data
                 });
             } catch (error) {
                 this.metrics.unshift(...metrics);

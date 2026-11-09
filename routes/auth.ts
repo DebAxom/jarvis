@@ -1,6 +1,18 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { scryptSync, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcrypt';
 import { generateTokens } from '../utils/auth';
+
+async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+	if (storedHash.includes(':')) {
+		const [salt, key] = storedHash.split(':');
+		if (!salt || !key) return false;
+		const derivedKey = scryptSync(password, salt, 64);
+		const keyBuffer = Buffer.from(key, 'hex');
+		return derivedKey.length === keyBuffer.length && timingSafeEqual(derivedKey, keyBuffer);
+	}
+	return bcrypt.compare(password, storedHash);
+}
 
 interface LoginBody {
 	appId: string;
@@ -53,20 +65,20 @@ export default async function (fastify: FastifyInstance): Promise<void> {
 		}
 
 		try {
-			const result = await fastify.pg.query<{ id: string; name: string; password: string; }>(
-				`SELECT id, name, password FROM apps WHERE appid = $1`,
+			const result = await fastify.pg.query<{ id: string; appid: string; name: string; password: string; }>(
+				`SELECT id, appid, name, password FROM apps WHERE appid = $1`,
 				[appId.trim()]
 			);
 
-			if (result.rowCount === 0) {
+			const app = result.rows[0];
+
+			if (!app) {
 				return reply.status(401).send({
 					error: 'Invalid App ID or password'
 				});
 			}
 
-			const app: any = result.rows[0];
-
-			const passwordValid = await bcrypt.compare(password,app.password);
+			const passwordValid = await verifyPassword(password, app.password);
 
 			if (!passwordValid) {
 				return reply.status(401).send({
@@ -74,14 +86,15 @@ export default async function (fastify: FastifyInstance): Promise<void> {
 				});
 			}
 
-			const tokens = await generateTokens({userId: app.id as string});
+			const tokens = await generateTokens({ userId: app.appid });
 
-			setAuthCookies(reply,tokens.accessToken,tokens.refreshToken);
+			setAuthCookies(reply, tokens.accessToken, tokens.refreshToken);
 
 			return reply.send({
 				success: true,
 				app: {
 					id: app.id,
+					appId: app.appid,
 					name: app.name
 				}
 			});

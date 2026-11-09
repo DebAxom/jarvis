@@ -31,6 +31,8 @@ const statements = [
         metadata JSONB DEFAULT '{}'
     )`,
 
+    `ALTER TABLE events ADD COLUMN IF NOT EXISTS category VARCHAR(50) NOT NULL DEFAULT 'system'`,
+
     `CREATE TABLE IF NOT EXISTS metrics (
         id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         appid VARCHAR(255) NOT NULL REFERENCES apps(appid) ON DELETE CASCADE,

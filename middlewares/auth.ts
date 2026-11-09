@@ -29,7 +29,7 @@ function deny(reply: FastifyReply) {
 }
 
 const isValid = (payload: TokenPayload | null): payload is TokenPayload => {
-	return (!!payload && typeof payload.userId === 'string' && typeof payload.tokenVersion === 'number');
+	return !!payload && typeof payload.userId === 'string';
 };
 
 export async function verifyAccessToken(request: FastifyRequest,reply: FastifyReply) {
@@ -68,8 +68,7 @@ export async function verifyAccessToken(request: FastifyRequest,reply: FastifyRe
 		// Issue new tokens when using the refresh token.
 		if (renewed) {
 			const tokens = await generateTokens({
-				userId: payload.userId,
-				tokenVersion: payload.tokenVersion
+				userId: payload.userId
 			});
 
 			reply.setCookie(

@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import postgres from '@fastify/postgres';
 import cookie from '@fastify/cookie';
+import formbody from '@fastify/formbody';
 import rateLimit from '@fastify/rate-limit';
 import routes from './routes/index';
 
@@ -12,11 +13,12 @@ try {
 		ssl: { rejectUnauthorized: true }
 	});
 } catch (err) {
-	console.error('DB/Redis error:', err);
+	console.error('DB error:', err);
 	process.exit(1);
 }
 
 await app.register(cookie);
+await app.register(formbody);
 
 await app.register(rateLimit, {
 	max: 300,

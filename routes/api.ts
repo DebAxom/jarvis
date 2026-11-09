@@ -2,6 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { authenticateApp } from "../middlewares/app_auth";
 import cors from "@fastify/cors";
 
+function parseTimestamp(ts?: string): Date | null {
+    if (!ts) return new Date();
+    const parsed = new Date(ts);
+    return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export default async function (fastify: FastifyInstance) {
     await fastify.register(cors, {
         origin: "*",
@@ -46,44 +52,53 @@ export default async function (fastify: FastifyInstance) {
         }
 
         const appid = request.appId!;
+        const values: unknown[] = [];
+        const rowsSql: string[] = [];
 
-        const client = await fastify.pg.connect();
+        for (let idx = 0; idx < events.length; idx++) {
+            const event : any = events[idx];
+            const ts = parseTimestamp(event.timestamp);
 
-        try {
-            await client.query("BEGIN");
-
-            for (const event of events) {
-                await client.query(
-                    `INSERT INTO events (
-                        appid, service, timestamp, category,
-                        msg, endpoint, trace_id, metadata
-                    )
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-                    [
-                        appid,
-                        event.service,
-                        event.timestamp ?? new Date(),
-                        event.category,
-                        event.msg,
-                        event.endpoint ?? null,
-                        event.trace_id ?? null,
-                        JSON.stringify(event.metadata ?? {})
-                    ]
-                );
+            if (!ts) {
+                return reply.code(400).send({
+                    success: false,
+                    error: `Invalid timestamp in event at index ${idx}`
+                });
             }
 
-            await client.query("COMMIT");
-
-            return reply.code(202).send({
-                success: true,
-                received: events.length
-            });
-        } catch (error) {
-            await client.query("ROLLBACK");
-            throw error;
-        } finally {
-            client.release();
+            const offset = idx * 8;
+            rowsSql.push(
+                `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`
+            );
+            values.push(
+                appid,
+                event.service.trim(),
+                ts,
+                event.category.trim(),
+                event.msg.trim(),
+                event.endpoint ?? null,
+                event.trace_id ?? null,
+                JSON.stringify(
+                    typeof event.metadata === "object" && event.metadata !== null && !Array.isArray(event.metadata)
+                        ? event.metadata
+                        : {}
+                )
+            );
         }
+
+        await fastify.pg.query(
+            `INSERT INTO events (
+                appid, service, timestamp, category,
+                msg, endpoint, trace_id, metadata
+            )
+            VALUES ${rowsSql.join(", ")}`,
+            values
+        );
+
+        return reply.code(202).send({
+            success: true,
+            received: events.length
+        });
     });
 
     // POST /metrics
@@ -107,12 +122,20 @@ export default async function (fastify: FastifyInstance) {
             });
         }
 
+        const ts = parseTimestamp(timestamp);
+        if (!ts) {
+            return reply.code(400).send({
+                success: false,
+                error: "Invalid timestamp format"
+            });
+        }
+
         await fastify.pg.query(
             `INSERT INTO metrics (appid, timestamp, data)
              VALUES ($1, $2, $3)`,
             [
                 request.appId!,
-                timestamp ?? new Date(),
+                ts,
                 JSON.stringify(data)
             ]
         );
