@@ -11,16 +11,13 @@ export default async function (fastify: FastifyInstance): Promise<void> {
     });
 
     await fastify.register(auth, { prefix: '/auth' });
+    fastify.addHook('preHandler', verifyAccessToken);
 
-    // Protected routes requiring valid dashboard session
-    await fastify.register(async (protectedRoutes) => {
-        protectedRoutes.addHook('preHandler', verifyAccessToken);
+    fastify.get("/metrics", async (request, reply) => {
+        const appid = request.user?.id!;
 
-        protectedRoutes.get("/metrics", async (request, reply) => {
-            const appid = request.user?.id!;
-
-            const { rows } = await fastify.pg.query(
-                `SELECT
+        const { rows } = await fastify.pg.query(
+            `SELECT
                 a.services,
                 m.timestamp,
                 m.data
@@ -33,31 +30,93 @@ export default async function (fastify: FastifyInstance): Promise<void> {
                 LIMIT 1
              ) m ON true
              WHERE a.appid = $1`,
-                [appid]
-            );
+            [appid]
+        );
 
-            if (!rows.length) {
-                return reply.code(404).send({
-                    success: false,
-                    error: "Application not found"
-                });
-            }
+        if (!rows.length) {
+            return reply.code(404).send({
+                success: false,
+                error: "Application not found"
+            });
+        }
 
-            const latest = rows[0];
+        const latest = rows[0];
 
-            const services = (latest.services ?? []).map(
-                (service: string) => ({
-                    name: service,
-                    metrics: latest.data?.[service] ?? null
-                })
-            );
+        const services = (latest.services ?? []).map(
+            (service: string) => ({
+                name: service,
+                metrics: latest.data?.[service] ?? null
+            })
+        );
+
+        return {
+            success: true,
+            hasMetrics: latest.timestamp !== null,
+            timestamp: latest.timestamp,
+            services
+        };
+    });
+
+    fastify.get("/services", async (request, reply) => {
+        const appid = request.user?.id!;
+
+        const { rows } = await fastify.pg.query(
+            `SELECT
+            a.services,
+            COALESCE(s.service_stats, '[]'::jsonb) AS service_stats
+         FROM apps a
+         LEFT JOIN LATERAL (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'name', service,
+                    'latest_event', latest_event,
+                    'event_count', event_count
+                )
+            ) AS service_stats
+            FROM (
+                SELECT
+                    e.service,
+                    MAX(e.timestamp) AS latest_event,
+                    COUNT(*) AS event_count
+                FROM events e
+                WHERE e.appid = a.appid
+                  AND e.timestamp >= NOW() - INTERVAL '24 hours'
+                GROUP BY e.service
+            ) stats
+         ) s ON true
+         WHERE a.appid = $1`,
+            [appid]
+        );
+
+        if (!rows.length) {
+            return reply.code(404).send({
+                success: false,
+                error: "Application not found"
+            });
+        }
+
+        const latest = rows[0];
+
+        const statsMap = new Map(
+            latest.service_stats.map((service: any) => [
+                service.name,
+                service
+            ])
+        );
+
+        const services = (latest.services ?? []).map((name: string) => {
+            const stats = statsMap.get(name) as any;
 
             return {
-                success: true,
-                hasMetrics: latest.timestamp !== null,
-                timestamp: latest.timestamp,
-                services
+                name,
+                latest_event: stats?.latest_event ?? null,
+                events_24h: Number(stats?.event_count ?? 0)
             };
         });
+
+        return {
+            success: true,
+            services
+        };
     });
 }

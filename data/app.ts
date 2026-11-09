@@ -118,5 +118,9 @@ async function setup() {
 }
 
 if (import.meta.main) {
-    setup();
+    // setup();
+    // await addService("todo", "app");
+    await deleteService("todo", "notifications");
+    await deleteService("todo", "auth");
+    await deleteService("todo", "tasks");
 }
