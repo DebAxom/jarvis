@@ -117,4 +117,40 @@ export default async function (fastify: FastifyInstance): Promise<void> {
             services
         };
     });
+
+    fastify.get("/events/recent", async (request, reply) => {
+        const appid = request.user?.id!;
+
+        const { limit: rawLimit } = request.query as {
+            limit?: string;
+        };
+
+        const limit = Math.min(
+            Math.max(parseInt(rawLimit ?? "5", 10) || 5, 1),
+            100
+        );
+
+        const { rows } = await fastify.pg.query(
+            `SELECT
+            id,
+            timestamp,
+            service,
+            category,
+            msg,
+            endpoint,
+            trace_id,
+            metadata
+         FROM events
+         WHERE appid = $1
+         ORDER BY timestamp DESC
+         LIMIT $2`,
+            [appid, limit]
+        );
+
+        return {
+            success: true,
+            count: rows.length,
+            events: rows
+        };
+    });
 }
