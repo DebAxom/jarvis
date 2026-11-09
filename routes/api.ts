@@ -31,20 +31,7 @@ export default async function (fastify: FastifyInstance) {
             }[];
         };
 
-        if (
-            !Array.isArray(events) ||
-            !events.length ||
-            events.length > 500 ||
-            events.some(e =>
-                !e ||
-                typeof e.service !== "string" ||
-                !e.service.trim() ||
-                typeof e.category !== "string" ||
-                !e.category.trim() ||
-                typeof e.msg !== "string" ||
-                !e.msg.trim()
-            )
-        ) {
+        if (!Array.isArray(events) || !events.length || events.length > 500 || events.some(e => !e || typeof e.service !== "string" || !e.service.trim() || typeof e.category !== "string" || !e.category.trim() || typeof e.msg !== "string" || !e.msg.trim())) {
             return reply.code(400).send({
                 success: false,
                 error: "Invalid events. Provide 1-500 valid events."
@@ -56,7 +43,7 @@ export default async function (fastify: FastifyInstance) {
         const rowsSql: string[] = [];
 
         for (let idx = 0; idx < events.length; idx++) {
-            const event : any = events[idx];
+            const event: any = events[idx];
             const ts = parseTimestamp(event.timestamp);
 
             if (!ts) {
@@ -113,7 +100,7 @@ export default async function (fastify: FastifyInstance) {
             typeof serviceMetrics !== "object" ||
             Array.isArray(serviceMetrics) ||
             !Object.keys(serviceMetrics).length ||
-            Object.values(serviceMetrics).some( value => typeof value !== "number" || !Number.isFinite(value))
+            Object.values(serviceMetrics).some(value => typeof value !== "number" || !Number.isFinite(value))
         )
         ) {
             return reply.code(400).send({

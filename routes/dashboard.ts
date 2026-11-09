@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import auth from './auth';
 import cors from '@fastify/cors';
 import { verifyAccessToken } from '../middlewares/auth';
 
@@ -10,7 +9,6 @@ export default async function (fastify: FastifyInstance): Promise<void> {
         methods: ['GET', 'POST', 'PATCH', 'DELETE']
     });
 
-    await fastify.register(auth, { prefix: '/auth' });
     fastify.addHook('preHandler', verifyAccessToken);
 
     fastify.get("/metrics", async (request, reply) => {
